@@ -37,7 +37,7 @@ from app.utils.user_agent import get_random_user_agent
 logger = get_logger()
 
 DEFAULT_ZAI_BASE_URL = "https://chat.z.ai"
-CHAT_BOOTSTRAP_MAX_CONTENT_LEN = 500
+CHAT_BOOTSTRAP_MAX_CONTENT_LEN = 1000000
 DEFAULT_PLATFORM = "web"
 DEFAULT_CLIENT_VERSION = "0.0.1"
 DEFAULT_TIMEZONE = "Asia/Shanghai"

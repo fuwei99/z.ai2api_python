@@ -6,6 +6,7 @@ import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Response
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from granian import Granian
@@ -141,7 +142,7 @@ async def handle_options():
 @app.get("/")
 async def root():
     """Root endpoint"""
-    return {"message": "OpenAI Compatible API Server"}
+    return RedirectResponse(url="/admin")
 
 
 def run_server():

@@ -1345,93 +1345,118 @@ class UpstreamClient:
         )
         chat_id = generate_uuid()
 
-        # 处理消息格式 - 上游使用单独的 files 字段传递图片
+        # 处理消息格式 - 本项目采用了全新创建会话的模型，因此需要将所有的历史上下文和 System 指令扁平化组装为单个最新的 Prompt，以便模型拥有完美记忆。
         messages = []
         files = []
         upload_chat_id = "" if use_persisted_chat else chat_id
 
-        for msg in normalized_messages:
+        compiled_text_parts = []
+        image_parts = []
+        system_prompt_text = ""
+        system_prompt_set = False
+        
+        for index, msg in enumerate(normalized_messages):
             role = str(msg.get("role", "user"))
             content = msg.get("content")
 
+            text_for_this_turn = ""
+
             if isinstance(content, str):
-                messages.append({"role": role, "content": content})
-                continue
+                text_for_this_turn = content
+            elif isinstance(content, list):
+                for part in content:
+                    image_url = None
+                    if hasattr(part, "type"):
+                        if part.type == "text" and hasattr(part, "text"):
+                            text_for_this_turn += "\n" + (part.text or "")
+                        elif part.type == "image_url" and hasattr(part, "image_url"):
+                            if hasattr(part.image_url, "url"):
+                                image_url = part.image_url.url
+                            elif isinstance(part.image_url, dict) and "url" in part.image_url:
+                                image_url = part.image_url["url"]
+                    elif isinstance(part, dict):
+                        if part.get("type") == "text":
+                            text_for_this_turn += "\n" + part.get("text", "")
+                        elif part.get("type") == "image_url":
+                            image_url = part.get("image_url", {}).get("url", "")
+                    elif isinstance(part, str):
+                        text_for_this_turn += "\n" + part
 
-            if not isinstance(content, list):
-                continue
+                    if image_url:
+                        self.logger.debug(f"✅ 检测到图片: {image_url[:50]}...")
+                        if image_url.startswith("data:") and auth_mode != "guest":
+                            self.logger.info("🔄 上传 base64 图片到上游服务")
+                            # 这里不再使用 await，因为列表推导很难做，等外层剥离吧，不过原逻辑是直接 await 的，这里保留
+                            file_info = await self.upload_image(
+                                image_url,
+                                upload_chat_id,
+                                token,
+                                user_id,
+                                auth_mode=auth_mode,
+                            )
+                            if not file_info:
+                                self.logger.warning("⚠️ 图片上传失败")
+                                text_for_this_turn += "\n[图片上传失败]"
+                            else:
+                                files.append(file_info)
+                                self.logger.info("✅ 图片已添加到 files 数组")
+                                if persisted_user_message_id:
+                                    file_info["ref_user_msg_id"] = persisted_user_message_id
+                                image_ref = str(file_info["id"])
+                                image_parts.append(
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {"url": image_ref},
+                                    }
+                                )
+                                self.logger.debug(f"📎 图片引用: {image_ref}")
+                        else:
+                            if auth_mode != "guest":
+                                self.logger.warning("⚠️ 非 base64 图片或匿名模式，保留原始URL")
+                            image_parts.append(
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": image_url},
+                                }
+                            )
 
-            text_parts = []
-            image_parts = []
-            for part in content:
-                image_url = None
-                if hasattr(part, "type"):
-                    if part.type == "text" and hasattr(part, "text"):
-                        text_parts.append(part.text or "")
-                    elif part.type == "image_url" and hasattr(part, "image_url"):
-                        if hasattr(part.image_url, "url"):
-                            image_url = part.image_url.url
-                        elif (
-                            isinstance(part.image_url, dict)
-                            and "url" in part.image_url
-                        ):
-                            image_url = part.image_url["url"]
-                elif isinstance(part, dict):
-                    if part.get("type") == "text":
-                        text_parts.append(part.get("text", ""))
-                    elif part.get("type") == "image_url":
-                        image_url = part.get("image_url", {}).get("url", "")
-                elif isinstance(part, str):
-                    text_parts.append(part)
-
-                if not image_url:
-                    continue
-
-                self.logger.debug(f"✅ 检测到图片: {image_url[:50]}...")
-                if image_url.startswith("data:") and auth_mode != "guest":
-                    self.logger.info("🔄 上传 base64 图片到上游服务")
-                    file_info = await self.upload_image(
-                        image_url,
-                        upload_chat_id,
-                        token,
-                        user_id,
-                        auth_mode=auth_mode,
-                    )
-                    if not file_info:
-                        self.logger.warning("⚠️ 图片上传失败")
-                        text_parts.append("[系统提示: 图片上传失败]")
-                        continue
-
-                    files.append(file_info)
-                    self.logger.info("✅ 图片已添加到 files 数组")
-                    if persisted_user_message_id:
-                        file_info["ref_user_msg_id"] = persisted_user_message_id
-                    image_ref = str(file_info["id"])
-                    image_parts.append(
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": image_ref},
-                        }
-                    )
-                    self.logger.debug(f"📎 图片引用: {image_ref}")
-                    continue
-
-                if auth_mode != "guest":
-                    self.logger.warning("⚠️ 非 base64 图片或匿名模式，保留原始URL")
-                image_parts.append(
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": image_url},
-                    }
-                )
-
-            message_content = []
-            combined_text = " ".join(text_parts).strip()
-            if combined_text:
-                message_content.append({"type": "text", "text": combined_text})
-            message_content.extend(image_parts)
-            if message_content:
-                messages.append({"role": role, "content": message_content})
+            text_for_this_turn = text_for_this_turn.strip()
+            if text_for_this_turn:
+                if role == "system":
+                    if not system_prompt_set:
+                        # 第一条 system 消息直接放在对话最前面
+                        system_prompt_text = text_for_this_turn
+                        system_prompt_set = True
+                    else:
+                        # 后续 system 消息转为 user 消息
+                        compiled_text_parts.append(f"<|user|>\n{text_for_this_turn}")
+                elif role == "assistant":
+                    compiled_text_parts.append(f"<|assistant|>\n{text_for_this_turn}")
+                elif role == "user":
+                    compiled_text_parts.append(f"<|user|>\n{text_for_this_turn}")
+                else:
+                    compiled_text_parts.append(f"<|user|>\n{text_for_this_turn}")
+                    
+        # 组装最终的单一消息内容
+        conversation_text = "\n\n".join(compiled_text_parts).strip()
+        if system_prompt_text:
+            combined_text = system_prompt_text + "\n\n" + conversation_text
+        else:
+            combined_text = conversation_text
+        combined_text = combined_text.strip()
+        last_user_text = combined_text  # 覆盖原先孤立的 last_user_text
+        
+        message_content = []
+        if combined_text:
+            message_content.append({"type": "text", "text": combined_text})
+        message_content.extend(image_parts)
+        
+        if message_content:
+            messages.append({"role": "user", "content": message_content})
+        else:
+            # 兜底防止无内容
+            last_user_text = "."
+            messages.append({"role": "user", "content": last_user_text})
 
         if use_persisted_chat:
             chat_id = await self._create_upstream_chat(

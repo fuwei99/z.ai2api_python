@@ -1,0 +1,50 @@
+[
+    {
+        "id": "glm-5",
+        "upstream_id": "glm-5",
+        "use_persisted_chat": true,
+        "preview_mode": true,
+        "mcp_servers": [],
+        "feature_entries": []
+    },
+    {
+        "id": "glm-4.7",
+        "upstream_id": "glm-4.7",
+        "use_persisted_chat": true,
+        "preview_mode": true,
+        "mcp_servers": [],
+        "feature_entries": []
+    },
+    {
+        "id": "glm-4.6v",
+        "upstream_id": "glm-4.6v",
+        "use_persisted_chat": true,
+        "preview_mode": false,
+        "mcp_servers": [
+            "vlm-image-search",
+            "vlm-image-recognition",
+            "vlm-image-processing"
+        ],
+        "feature_entries": [
+            {"type": "mcp", "server": "vlm-image-search", "status": "selected"},
+            {"type": "mcp", "server": "vlm-image-recognition", "status": "selected"},
+            {"type": "mcp", "server": "vlm-image-processing", "status": "selected"}
+        ]
+    },
+    {
+        "id": "glm-4.5",
+        "upstream_id": "0727-360B-API",
+        "use_persisted_chat": true,
+        "preview_mode": true,
+        "mcp_servers": [],
+        "feature_entries": []
+    },
+    {
+        "id": "glm-4.5-air",
+        "upstream_id": "0727-106B-API",
+        "use_persisted_chat": true,
+        "preview_mode": true,
+        "mcp_servers": [],
+        "feature_entries": []
+    }
+]

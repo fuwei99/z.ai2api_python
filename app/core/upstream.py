@@ -6,6 +6,7 @@
 import asyncio
 import base64
 import json
+import os
 import random
 import time
 import uuid
@@ -372,19 +373,14 @@ class UpstreamClient:
         self.base_url = DEFAULT_ZAI_BASE_URL
         self.auth_url = f"{self.base_url}/api/v1/auths/"
         
-        # 模型映射
-        self.model_mapping = {
-            settings.GLM45_MODEL: "0727-360B-API",  # GLM-4.5
-            settings.GLM45_THINKING_MODEL: "0727-360B-API",  # GLM-4.5-Thinking
-            settings.GLM45_SEARCH_MODEL: "0727-360B-API",  # GLM-4.5-Search
-            settings.GLM45_AIR_MODEL: "0727-106B-API",  # GLM-4.5-Air
-            settings.GLM46V_MODEL: "glm-4.6v",  # GLM-4.6V多模态
-            settings.GLM5_MODEL: "glm-5",  # GLM-5
-            settings.GLM47_MODEL: "glm-4.7",  # GLM-4.7
-            settings.GLM47_THINKING_MODEL: "glm-4.7",  # GLM-4.7-Thinking
-            settings.GLM47_SEARCH_MODEL: "glm-4.7",  # GLM-4.7-Search
-            settings.GLM47_ADVANCED_SEARCH_MODEL: "glm-4.7",  # GLM-4.7-advanced-search
-        }
+        # 模型配置读取
+        models_file_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models", "models.json")
+        try:
+            with open(models_file_path, "r", encoding="utf-8") as f:
+                self.models_config = json.load(f)
+        except Exception as e:
+            self.logger.error(f"加载 models.json 失败: {e}")
+            self.models_config = []
 
     def _get_guest_retry_limit(self) -> int:
         """匿名号池可提供的最大重试预算。"""
@@ -598,51 +594,30 @@ class UpstreamClient:
     
     def get_supported_models(self) -> List[str]:
         """获取支持的模型列表"""
-        return [
-            settings.GLM45_MODEL,
-            settings.GLM45_THINKING_MODEL,
-            settings.GLM45_SEARCH_MODEL,
-            settings.GLM45_AIR_MODEL,
-            settings.GLM46V_MODEL,
-            settings.GLM5_MODEL,
-            settings.GLM47_MODEL,
-            settings.GLM47_THINKING_MODEL,
-            settings.GLM47_SEARCH_MODEL,
-            settings.GLM47_ADVANCED_SEARCH_MODEL,
-        ]
+        return [model.get("id") for model in self.models_config]
+
+    def _get_base_model_id(self, requested_model: str) -> str:
+        # 移除后缀以匹配基础模型配置，优先移除最长的后缀
+        return requested_model.lower().replace("-thinking", "").replace("-advanced-search", "").replace("-search", "")
 
     def _requires_persisted_chat(self, upstream_model_id: str) -> bool:
         """需要挂载真实 chat 会话的上游模型。"""
-        return bool(
-            self._get_model_request_profile(upstream_model_id)["use_persisted_chat"]
-        )
+        # 注意: upstream_model_id 在原先逻辑里是基础模型名字，或者被透传，这里统一提取一下以防万一
+        profile = self._get_model_request_profile(self._get_base_model_id(upstream_model_id))
+        return bool(profile.get("use_persisted_chat", False))
 
-    def _get_model_request_profile(self, upstream_model_id: str) -> Dict[str, Any]:
+    def _get_model_request_profile(self, base_model_id: str) -> Dict[str, Any]:
         """返回模型专属的请求配置。"""
-        if upstream_model_id == "glm-4.6v":
-            return {
-                "use_persisted_chat": True,
-                "preview_mode": False,
-                "mcp_servers": list(GLM46V_MCP_SERVERS),
-                "feature_entries": [dict(item) for item in GLM46V_SELECTED_FEATURES],
-                "default_enable_thinking": True,
-            }
-
-        if upstream_model_id == "glm-5":
-            return {
-                "use_persisted_chat": False,
-                "preview_mode": True,
-                "mcp_servers": [],
-                "feature_entries": [],
-                "default_enable_thinking": True,
-            }
-
+        for model in self.models_config:
+            if model.get("id") == base_model_id:
+                return model
+        # 如果未找到配置，返回一个安全的默认值
         return {
-            "use_persisted_chat": upstream_model_id == "glm-4.7",
+            "upstream_id": base_model_id,
+            "use_persisted_chat": False,
             "preview_mode": True,
             "mcp_servers": [],
             "feature_entries": [],
-            "default_enable_thinking": None,
         }
 
     def _build_request_variables(self) -> Dict[str, str]:
@@ -907,7 +882,7 @@ class UpstreamClient:
             "extra": {},
             "features": {
                 "image_generation": False,
-                "web_search": web_search,
+                "web_search": False,
                 "auto_web_search": web_search,
                 "preview_mode": preview_mode,
                 "flags": [],
@@ -1335,34 +1310,32 @@ class UpstreamClient:
         guest_user_id = auth_info.get("guest_user_id")
         # 确定请求的模型特性
         last_user_text = _extract_last_user_text(raw_messages)
-        requested_model = request.model
-        is_thinking_model = "-thinking" in requested_model.casefold()
-        is_search_model = "-search" in requested_model.casefold()
-        is_advanced_search = requested_model == settings.GLM47_ADVANCED_SEARCH_MODEL
-        upstream_model_id = self.model_mapping.get(requested_model, "0727-360B-API")
+        requested_model = request.model.lower()
+        is_thinking_model = "-thinking" in requested_model
+        is_advanced_search = "-advanced-search" in requested_model
+        is_search_model = "-search" in requested_model and not is_advanced_search
+        
+        base_model_id = self._get_base_model_id(requested_model)
+        model_profile = self._get_model_request_profile(base_model_id)
+        upstream_model_id = model_profile.get("upstream_id", "0727-360B-API")
         tools = request.tools if settings.TOOL_SUPPORT and request.tools else None
         tool_choice = getattr(request, "tool_choice", None)
-        model_profile = self._get_model_request_profile(upstream_model_id)
+        
         enable_thinking = request.enable_thinking
         if enable_thinking is None:
-            default_enable_thinking = model_profile["default_enable_thinking"]
-            enable_thinking = (
-                default_enable_thinking
-                if default_enable_thinking is not None
-                else is_thinking_model
-            )
+            enable_thinking = is_thinking_model or is_advanced_search
 
         web_search = request.web_search
         if web_search is None:
             web_search = is_search_model or is_advanced_search
 
-        use_persisted_chat = bool(model_profile["use_persisted_chat"])
-        preview_mode = bool(model_profile["preview_mode"])
-        feature_entries = list(model_profile["feature_entries"])
+        use_persisted_chat = bool(model_profile.get("use_persisted_chat", False))
+        preview_mode = bool(model_profile.get("preview_mode", True))
+        feature_entries = list(model_profile.get("feature_entries", []))
         persisted_user_message_id = generate_uuid() if use_persisted_chat else None
         persisted_assistant_message_id = generate_uuid() if use_persisted_chat else None
 
-        mcp_servers = list(model_profile["mcp_servers"])
+        mcp_servers = list(model_profile.get("mcp_servers", []))
         if is_advanced_search and "advanced-search" not in mcp_servers:
             mcp_servers.append("advanced-search")
             self.logger.info("🔍 检测到高级搜索模型，添加 advanced-search MCP 服务器")
@@ -1509,7 +1482,7 @@ class UpstreamClient:
                 "extra": {},
                 "features": {
                     "image_generation": False,
-                    "web_search": web_search,
+                    "web_search": False,
                     "auto_web_search": web_search,
                     "preview_mode": preview_mode,
                     "flags": [],
@@ -1759,6 +1732,8 @@ class UpstreamClient:
                         json=transformed["body"],
                         headers=transformed["headers"],
                     ) as response:
+                        self.logger.info(f"🛰️ 上游响应状态码: {response.status_code}")
+                        self.logger.debug(f"🛰️ 上游响应头: {dict(response.headers)}")
                         error_text = await response.aread() if response.status_code != 200 else b""
                         error_msg = error_text.decode("utf-8", errors="ignore")
                         error_code, parsed_error_message = (
@@ -1997,6 +1972,8 @@ class UpstreamClient:
 
         try:
             async for line in response.aiter_lines():
+                if line:
+                    self.logger.debug(f"🔍 [DEBUG] 上游原始行: {line}")
                 line_count += 1
                 if not line:
                     continue

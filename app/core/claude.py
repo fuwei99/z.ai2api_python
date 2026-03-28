@@ -59,6 +59,7 @@ def _resolve_claude_model(model: Any) -> str:
         settings.GLM45_AIR_MODEL.casefold(): settings.GLM45_AIR_MODEL,
         settings.GLM46V_MODEL.casefold(): settings.GLM46V_MODEL,
         settings.GLM5_MODEL.casefold(): settings.GLM5_MODEL,
+        settings.GLM5_TURBO_MODEL.casefold(): settings.GLM5_TURBO_MODEL,
         settings.GLM47_MODEL.casefold(): settings.GLM47_MODEL,
         settings.GLM47_THINKING_MODEL.casefold(): settings.GLM47_THINKING_MODEL,
         settings.GLM47_SEARCH_MODEL.casefold(): settings.GLM47_SEARCH_MODEL,

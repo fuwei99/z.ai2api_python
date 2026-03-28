@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     GLM45_AIR_MODEL: str = os.getenv("GLM45_AIR_MODEL", "GLM-4.5-Air")
     GLM46V_MODEL: str = os.getenv("GLM46V_MODEL", "GLM-4.6V")
     GLM5_MODEL: str = os.getenv("GLM5_MODEL", "GLM-5")
+    GLM5_TURBO_MODEL: str = os.getenv("GLM5_TURBO_MODEL", "GLM-5-Turbo")
     GLM47_MODEL: str = os.getenv("GLM47_MODEL", "GLM-4.7")
     GLM47_THINKING_MODEL: str = os.getenv("GLM47_THINKING_MODEL", "GLM-4.7-Thinking")
     GLM47_SEARCH_MODEL: str = os.getenv("GLM47_SEARCH_MODEL", "GLM-4.7-Search")

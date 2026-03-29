@@ -46,22 +46,6 @@ class Settings(BaseSettings):
         os.getenv("TOKEN_AUTO_DELETE_INVALID", "false").lower() == "true"
     )
 
-    # Model Configuration
-    GLM45_MODEL: str = os.getenv("GLM45_MODEL", "GLM-4.5")
-    GLM45_THINKING_MODEL: str = os.getenv("GLM45_THINKING_MODEL", "GLM-4.5-Thinking")
-    GLM45_SEARCH_MODEL: str = os.getenv("GLM45_SEARCH_MODEL", "GLM-4.5-Search")
-    GLM45_AIR_MODEL: str = os.getenv("GLM45_AIR_MODEL", "GLM-4.5-Air")
-    GLM46V_MODEL: str = os.getenv("GLM46V_MODEL", "GLM-4.6V")
-    GLM5_MODEL: str = os.getenv("GLM5_MODEL", "GLM-5")
-    GLM5_TURBO_MODEL: str = os.getenv("GLM5_TURBO_MODEL", "GLM-5-Turbo")
-    GLM47_MODEL: str = os.getenv("GLM47_MODEL", "GLM-4.7")
-    GLM47_THINKING_MODEL: str = os.getenv("GLM47_THINKING_MODEL", "GLM-4.7-Thinking")
-    GLM47_SEARCH_MODEL: str = os.getenv("GLM47_SEARCH_MODEL", "GLM-4.7-Search")
-    GLM47_ADVANCED_SEARCH_MODEL: str = os.getenv(
-        "GLM47_ADVANCED_SEARCH_MODEL",
-        "GLM-4.7-advanced-search",
-    )
-
     # Server Configuration
     LISTEN_PORT: int = int(os.getenv("LISTEN_PORT", "8080"))
     DEBUG_LOGGING: bool = os.getenv("DEBUG_LOGGING", "true").lower() == "true"

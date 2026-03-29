@@ -593,12 +593,26 @@ class UpstreamClient:
         )
     
     def get_supported_models(self) -> List[str]:
-        """获取支持的模型列表"""
-        return [model.get("id") for model in self.models_config]
+        """获取支持的模型列表（包含别名）"""
+        ids = []
+        for model in self.models_config:
+            if model.get("id"):
+                ids.append(model["id"])
+            if model.get("aliases"):
+                ids.extend(model["aliases"])
+        return list(set(ids))
 
     def _get_base_model_id(self, requested_model: str) -> str:
-        # 移除后缀以匹配基础模型配置，优先移除最长的后缀
-        return requested_model.lower().replace("-thinking", "").replace("-advanced-search", "").replace("-search", "")
+        """从请求的模型名找到 models.json 中的唯一 id。"""
+        requested_lower = requested_model.lower()
+        for model in self.models_config:
+            if model.get("id") == requested_lower:
+                return str(model["id"])
+            aliases = model.get("aliases") or []
+            if any(a.lower() == requested_lower for a in aliases):
+                return str(model["id"])
+        # 如果还是没找到，尝试模糊匹配（向下兼容老逻辑）
+        return requested_lower.replace("-thinking", "").replace("-advanced-search", "").replace("-search", "")
 
     def _requires_persisted_chat(self, upstream_model_id: str) -> bool:
         """需要挂载真实 chat 会话的上游模型。"""
@@ -1310,24 +1324,21 @@ class UpstreamClient:
         guest_user_id = auth_info.get("guest_user_id")
         # 确定请求的模型特性
         last_user_text = _extract_last_user_text(raw_messages)
-        requested_model = request.model.lower()
-        is_thinking_model = "-thinking" in requested_model
-        is_advanced_search = "-advanced-search" in requested_model
-        is_search_model = "-search" in requested_model and not is_advanced_search
-        
+        requested_model = request.model
         base_model_id = self._get_base_model_id(requested_model)
         model_profile = self._get_model_request_profile(base_model_id)
+        
         upstream_model_id = model_profile.get("upstream_id", "0727-360B-API")
         tools = request.tools if settings.TOOL_SUPPORT and request.tools else None
         tool_choice = getattr(request, "tool_choice", None)
         
         enable_thinking = request.enable_thinking
         if enable_thinking is None:
-            enable_thinking = is_thinking_model or is_advanced_search
+            enable_thinking = bool(model_profile.get("is_thinking", False))
 
         web_search = request.web_search
         if web_search is None:
-            web_search = is_search_model or is_advanced_search
+            web_search = bool(model_profile.get("web_search", False))
 
         use_persisted_chat = bool(model_profile.get("use_persisted_chat", False))
         preview_mode = bool(model_profile.get("preview_mode", True))
@@ -1336,7 +1347,7 @@ class UpstreamClient:
         persisted_assistant_message_id = generate_uuid() if use_persisted_chat else None
 
         mcp_servers = list(model_profile.get("mcp_servers", []))
-        if is_advanced_search and "advanced-search" not in mcp_servers:
+        if base_model_id == "glm-4.7-advanced-search" and "advanced-search" not in mcp_servers:
             mcp_servers.append("advanced-search")
             self.logger.info("🔍 检测到高级搜索模型，添加 advanced-search MCP 服务器")
 

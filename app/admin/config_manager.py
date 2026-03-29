@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Mapping
@@ -438,6 +439,50 @@ def build_config_page_data(
             }
         )
 
+    # 动态注入"模型映射"配置项
+    models_file_path = Path("app/models/models.json")
+    if models_file_path.exists():
+        try:
+            with open(models_file_path, "r", encoding="utf-8") as f:
+                models_data = json.load(f)
+            
+            models_fields = []
+            for item in models_data:
+                model_id = item.get("id", "")
+                name = item.get("name", model_id)
+                desc = item.get("description", "")
+                upstream_id = item.get("upstream_id", "")
+                
+                models_fields.append({
+                    "key": f"MODEL_MAP_{model_id}",
+                    "label": name,
+                    "description": desc,
+                    "value_type": "str",
+                    "value": upstream_id,
+                    "input_type": "text",
+                    "placeholder": "请输入上游模型标识",
+                    "required": True,
+                    "wide": False,
+                    "sensitive": False,
+                    "restart_required": False,
+                    "min_value": None,
+                    "max_value": None,
+                    "source_label": "models.json",
+                    "source_badge_class": "bg-blue-50 text-blue-700 ring-blue-200",
+                })
+            
+            # 将模型分组放在第二位（紧接着服务运行之后）
+            sections.insert(0, {
+                "id": "models",
+                "title": "模型映射",
+                "description": "映射 OpenAI 兼容模型名到上游 Z.AI 实际模型名。",
+                "fields": models_fields,
+                "field_count": len(models_fields),
+            })
+            total_fields += len(models_fields)
+        except Exception as e:
+            logger.error(f"❌ 读取 models.json 失败: {e}")
+
     return {
         "sections": sections,
         "env_content": env_content,
@@ -492,6 +537,15 @@ def build_form_updates(form_data: Mapping[str, Any]) -> dict[str, object]:
     return updates
 
 
+def build_models_updates(form_data: Mapping[str, Any]) -> dict[str, str]:
+    models_updates: dict[str, str] = {}
+    for key, val in form_data.items():
+        if key.startswith("MODEL_MAP_"):
+            model_id = key.replace("MODEL_MAP_", "")
+            models_updates[model_id] = str(val).strip()
+    return models_updates
+
+
 async def _apply_env_change(
     writer: Callable[[Path], None],
     *,
@@ -525,12 +579,34 @@ async def save_form_config(
     env_path: str | Path = ENV_PATH,
 ) -> dict[str, object]:
     updates = build_form_updates(form_data)
+    models_updates = build_models_updates(form_data)
 
     async def _reload() -> None:
         await reload_callback()
 
     def _writer(target_path: Path) -> None:
+        # 修改 .env 环境变量
         update_env_file(updates, env_path=target_path)
+        
+        # 修改 models.json 映射
+        if models_updates:
+            models_file_path = Path("app/models/models.json")
+            if models_file_path.exists():
+                with open(models_file_path, "r", encoding="utf-8") as f:
+                    models_data = json.load(f)
+                
+                changed = False
+                for item in models_data:
+                    mid = item.get("id")
+                    if mid in models_updates:
+                        if item.get("upstream_id") != models_updates[mid]:
+                            item["upstream_id"] = models_updates[mid]
+                            changed = True
+                            
+                if changed:
+                    with open(models_file_path, "w", encoding="utf-8") as f:
+                        json.dump(models_data, f, ensure_ascii=False, indent=4)
+                    logger.info("✅ 已安全更新 models.json")
 
     await _apply_env_change(_writer, reload_callback=_reload, env_path=env_path)
     return updates

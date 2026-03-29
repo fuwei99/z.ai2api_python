@@ -593,13 +593,11 @@ class UpstreamClient:
         )
     
     def get_supported_models(self) -> List[str]:
-        """获取支持的模型列表（包含别名）"""
+        """获取支持的模型列表（仅返回基础 ID，避免前端列表堆叠别名）"""
         ids = []
         for model in self.models_config:
             if model.get("id"):
                 ids.append(model["id"])
-            if model.get("aliases"):
-                ids.extend(model["aliases"])
         return list(set(ids))
 
     def _get_base_model_id(self, requested_model: str) -> str:

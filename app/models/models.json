@@ -97,57 +97,5 @@
             {"type": "mcp", "server": "vlm-image-recognition", "status": "selected"},
             {"type": "mcp", "server": "vlm-image-processing", "status": "selected"}
         ]
-    },
-    {
-        "id": "glm-4.5",
-        "name": "GLM 4.5",
-        "description": "智谱清言 GLM-4.5 大参数版。",
-        "upstream_id": "0727-360B-API",
-        "aliases": ["GLM-4.5", "glm-4.5"],
-        "use_persisted_chat": true,
-        "preview_mode": true,
-        "is_thinking": false,
-        "web_search": false,
-        "mcp_servers": [],
-        "feature_entries": []
-    },
-    {
-        "id": "glm-4.5-thinking",
-        "name": "GLM 4.5 Thinking",
-        "description": "智谱清言 GLM-4.5 推理版。",
-        "upstream_id": "0727-360B-API",
-        "aliases": ["GLM-4.5-Thinking", "glm-4.5-thinking"],
-        "use_persisted_chat": true,
-        "preview_mode": true,
-        "is_thinking": true,
-        "web_search": false,
-        "mcp_servers": [],
-        "feature_entries": []
-    },
-    {
-        "id": "glm-4.5-search",
-        "name": "GLM 4.5 Search",
-        "description": "智谱清言 GLM-4.5 搜索版。",
-        "upstream_id": "0727-360B-API",
-        "aliases": ["GLM-4.5-Search", "glm-4.5-search"],
-        "use_persisted_chat": true,
-        "preview_mode": true,
-        "is_thinking": false,
-        "web_search": true,
-        "mcp_servers": [],
-        "feature_entries": []
-    },
-    {
-        "id": "glm-4.5-air",
-        "name": "GLM 4.5 Air",
-        "description": "智谱清言 GLM-4.5 轻量版。",
-        "upstream_id": "0727-106B-API",
-        "aliases": ["GLM-4.5-Air", "glm-4.5-air"],
-        "use_persisted_chat": true,
-        "preview_mode": true,
-        "is_thinking": false,
-        "web_search": false,
-        "mcp_servers": [],
-        "feature_entries": []
     }
 ]

@@ -126,10 +126,22 @@ async def format_sse_done() -> str:
     return "data: [DONE]\n\n"
 
 
+def get_friendly_error_message(error: Exception, context: str = "") -> str:
+    """获取简洁友好的错误提示。"""
+    if isinstance(error, (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.WriteTimeout)):
+        return "z.ai time out"
+    elif isinstance(error, (httpx.ProxyError, httpx.NetworkError)):
+        return "z.ai network/proxy error"
+    
+    error_val = str(error)
+    if not error_val and hasattr(error, "__class__"):
+        error_val = error.__class__.__name__
+    return f"上游{context}错误: {error_val}" if context else f"上游错误: {error_val}"
+
 def handle_error(error: Exception, context: str = "") -> Dict[str, Any]:
     """统一错误处理。"""
-    error_msg = f"上游{context}错误: {str(error)}" if context else f"上游错误: {str(error)}"
-    logger.error(error_msg)
+    error_msg = get_friendly_error_message(error, context)
+    logger.error(f"{error_msg} (Original: {type(error).__name__}: {str(error)})")
     return {
         "error": {
             "message": error_msg,

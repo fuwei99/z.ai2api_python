@@ -22,6 +22,7 @@ from app.core.openai_compat import (
     create_openai_chunk,
     create_openai_response_with_reasoning,
     format_sse_chunk,
+    get_friendly_error_message,
     handle_error,
 )
 from app.models.schemas import OpenAIRequest
@@ -1935,9 +1936,10 @@ class UpstreamClient:
             elif current_token:
                 await self.mark_token_failure(current_token, e)
 
+            error_message = get_friendly_error_message(e)
             error_response = {
                 "error": {
-                    "message": str(e),
+                    "message": error_message,
                     "type": "stream_error"
                 }
             }

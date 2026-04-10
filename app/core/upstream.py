@@ -12,6 +12,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Dict, List, Optional, Set, Tuple, Union
+import traceback
 from urllib.parse import urlencode
 
 import httpx
@@ -877,6 +878,9 @@ class UpstreamClient:
         message_id: str,
         current_user_message_id: str,
         current_user_message_parent_id: Optional[str],
+        vlm_tools_enable: bool = False,
+        vlm_web_search_enable: bool = False,
+        vlm_website_mode: bool = False,
     ) -> Dict[str, Any]:
         """构建兼容持久化 chat 模型的精简 completions 请求体。"""
         params: Dict[str, Any] = {}
@@ -891,13 +895,20 @@ class UpstreamClient:
             "messages": messages,
             "signature_prompt": prompt,
             "params": params,
-            "extra": {},
+            "extra": {
+                "vlm_tools_enable": vlm_tools_enable,
+                "vlm_web_search_enable": vlm_web_search_enable,
+                "vlm_website_mode": vlm_website_mode,
+            },
             "features": {
                 "image_generation": False,
                 "web_search": False,
                 "auto_web_search": web_search,
                 "preview_mode": preview_mode,
                 "flags": [],
+                "vlm_tools_enable": vlm_tools_enable,
+                "vlm_web_search_enable": vlm_web_search_enable,
+                "vlm_website_mode": vlm_website_mode,
                 "enable_thinking": enable_thinking,
             },
             "variables": self._build_request_variables(),
@@ -1314,7 +1325,9 @@ class UpstreamClient:
         )
         token = str(auth_info.get("token") or "")
         if not token:
+            self.logger.error("❌ 无法获取上游认证令牌，auth_info: %s", auth_info)
             raise RuntimeError("无法获取上游认证令牌")
+        self.logger.debug("✅ 获取到鉴权信息, 模式: %s, 来源: %s", auth_info.get("auth_mode"), auth_info.get("token_source"))
 
         user_id = str(auth_info.get("user_id") or _extract_user_id_from_token(token))
         auth_mode = str(auth_info.get("auth_mode") or "authenticated")
@@ -1325,8 +1338,10 @@ class UpstreamClient:
         requested_model = request.model
         base_model_id = self._get_base_model_id(requested_model)
         model_profile = self._get_model_request_profile(base_model_id)
+        self.logger.debug("📝 模型映射: %s -> %s, Profile ID: %s", requested_model, base_model_id, model_profile.get("id"))
         
         upstream_model_id = model_profile.get("upstream_id", "0727-360B-API")
+        self.logger.debug("🚀 上游模型 ID: %s", upstream_model_id)
         tools = request.tools if settings.TOOL_SUPPORT and request.tools else None
         tool_choice = getattr(request, "tool_choice", None)
         
@@ -1340,6 +1355,11 @@ class UpstreamClient:
 
         use_persisted_chat = bool(model_profile.get("use_persisted_chat", False))
         preview_mode = bool(model_profile.get("preview_mode", True))
+        
+        vlm_tools_enable = bool(model_profile.get("vlm_tools_enable", False))
+        vlm_web_search_enable = bool(model_profile.get("vlm_web_search_enable", False))
+        vlm_website_mode = bool(model_profile.get("vlm_website_mode", False))
+        
         feature_entries = list(model_profile.get("feature_entries", []))
         persisted_user_message_id = generate_uuid() if use_persisted_chat else None
         persisted_assistant_message_id = generate_uuid() if use_persisted_chat else None
@@ -1502,6 +1522,9 @@ class UpstreamClient:
                 message_id=persisted_assistant_message_id or generate_uuid(),
                 current_user_message_id=persisted_user_message_id or generate_uuid(),
                 current_user_message_parent_id=None,
+                vlm_tools_enable=vlm_tools_enable,
+                vlm_web_search_enable=vlm_web_search_enable,
+                vlm_website_mode=vlm_website_mode,
             )
         else:
             message_id = generate_uuid()
@@ -1513,22 +1536,25 @@ class UpstreamClient:
                 "signature_prompt": last_user_text,
                 "files": files,
                 "params": {},
-                "extra": {},
+                "extra": {
+                    "vlm_tools_enable": vlm_tools_enable,
+                    "vlm_web_search_enable": vlm_web_search_enable,
+                    "vlm_website_mode": vlm_website_mode,
+                },
                 "features": {
                     "image_generation": False,
                     "web_search": False,
                     "auto_web_search": web_search,
                     "preview_mode": preview_mode,
                     "flags": [],
-                    "features": [
-                        dict(item)
-                        for item in (feature_entries or DEFAULT_COMPLETION_FEATURES)
-                    ],
+                    "vlm_tools_enable": vlm_tools_enable,
+                    "vlm_web_search_enable": vlm_web_search_enable,
+                    "vlm_website_mode": vlm_website_mode,
                     "enable_thinking": enable_thinking,
                 },
                 "background_tasks": {
-                    "title_generation": False,
-                    "tags_generation": False,
+                    "title_generation": True,
+                    "tags_generation": True,
                 },
                 "mcp_servers": mcp_servers,
                 "variables": self._build_request_variables(),
@@ -1625,7 +1651,9 @@ class UpstreamClient:
         self.logger.debug(f"  流式模式: {request.stream}")
 
         try:
+            self.logger.info(f"🔄 开始转换请求: {request.model}")
             transformed = await self.transform_request(request)
+            self.logger.info(f"✅ 请求转换完成，目标 URL: {transformed['url']}")
 
             if request.stream:
                 return self._create_stream_response(request, transformed)
@@ -1736,6 +1764,7 @@ class UpstreamClient:
 
         except Exception as e:
             self.logger.error(f"❌ {self.name} 响应失败: {str(e)}")
+            self.logger.error(f"异常堆栈:\n{traceback.format_exc()}")
             return handle_error(e, "请求处理")
 
     async def _create_stream_response(
@@ -1900,8 +1929,7 @@ class UpstreamClient:
                         return
         except Exception as e:
             self.logger.error(f"❌ 流处理错误: {e}")
-            import traceback
-            self.logger.error(traceback.format_exc())
+            self.logger.error(f"异常堆栈:\n{traceback.format_exc()}")
             if self._is_guest_auth(transformed):
                 await self._release_guest_session(transformed)
             elif current_token:
